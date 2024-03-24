@@ -1,66 +1,74 @@
 pipeline {
     agent any 
     
-    tools{
+    tools {
         jdk 'jdk'
         maven 'maven'
     }
     
     environment {
-        SCANNER_HOME=tool 'sonar-scanner'
+        SCANNER_HOME= tool 'sonar-scanner'
     }
     
-    stages{
-        
-        stage("Git Checkout"){
-            steps{
-               git branch: 'main', credentialsId: 'git-token', url: 'https://github.com/wumine2/boardgame.git'
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', credentialsId: 'git-token', url: 'https://github.com/wumine2/boardgame.git'
             }
         }
         
-        stage("Compile"){
-            steps{
-                sh "mvn clean compile"
+        stage('Compile') {
+            steps {
+                sh "mvn compile"
             }
         }
         
-        stage("Test"){
+        stage('Test'){
             steps{
                 sh "mvn test"
             }
         }
         
-        stage("File System Scan"){
+        stage('File System Scan'){
             steps{
                 sh "trivy fs --format table -o trivy-fs-report.html ."
             }
         }
         
-        stage("Sonarqube Analysis "){
+        stage('Sonarqube Analysis'){
             steps{
-                withSonarQubeEnv('sonar-server') {
-                    sh ''' $SCANNER_HOME/bin/sonar-scanner 
+                withSonarQubeEnv('sonar') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner \
                     -Dsonar.projectName=boardgame \
                     -Dsonar.java.binaries=. \
                     -Dsonar.projectKey=boardgame '''
-    
                 }
             }
-            
-        stage('Hello') {
+        }
+        
+                
+        stage('Build Package') {
+            steps {
+                sh "mvn package"
+            }
+        }
+        
+        stage('Deploy to Nexus') {
             steps {
                 withMaven(globalMavenSettingsConfig: 'global-settings', jdk: 'jdk', maven: 'maven', mavenSettingsConfig: '', traceability: true) {
-                         sh "mvn deploy"
-                }
+                     sh "mvn deploy"
+            }
             }
         }
         
         stage('Docker Build') {
             steps {
-                withDockerRegistry(credentialsId: 'docker-token', toolName: 'docker') {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-token', toolName: 'docker') {
                     sh " docker build -t wumine2/boardgame:v1 ."
-                }
+               }
             }
+        }
         }
         
         stage('Docker Image Scan') {
@@ -69,12 +77,14 @@ pipeline {
             }
         }
         
-        stage('Build') {
+        stage('Docker Image Push') {
             steps {
-                sh "mvn package"
+                script {
+                    withDockerRegistry(credentialsId: 'docker-token', toolName: 'docker') {
+                    sh " docker push wumine2/boardgame:v1"
             }
         }
-
-        }
-    }   
+     }
+    }
+}
 }
